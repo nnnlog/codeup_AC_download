@@ -1,0 +1,13 @@
+{
+  "name": "codeup_backup",
+  "version": "1.0.0",
+  "description": "CodeUp AC Code Backup",
+  "main": "index.js",
+  "keywords": [],
+  "author": "박찬솔",
+  "license": "MIT",
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.3",
+    "request": "^2.88.0"
+  }
+}
