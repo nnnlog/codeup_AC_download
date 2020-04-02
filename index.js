@@ -23,104 +23,99 @@
 
  */
 
-const request = require("request");
+const axios = require("axios");
 const cheerio = require("cheerio");
 const fs = require("fs");
 
-const root = "https://codeup.kr/";
+const request = axios.create({
+	baseURL: "https://codeup.kr/"
+});
 
 const auth = require("./auth");
 
 const replace = {
-    "C": "c",
-    "C++": "cpp",
-    "Python": "py",
-    "Java": "java"
+	"C": "c",
+	"C++": "cpp",
+	"Python": "py",
+	"Java": "java"
 };
 
 deleteFolderRecursive = function (path) {
-    let files = [];
-    if (fs.existsSync(path)) {
-        files = fs.readdirSync(path);
-        files.forEach(function (file) {
-            var curPath = path + "/" + file;
-            if (fs.lstatSync(curPath).isDirectory()) { // recurse
-                deleteFolderRecursive(curPath);
-            } else { // delete file
-                fs.unlinkSync(curPath);
-            }
-        });
-        fs.rmdirSync(path);
-    }
+	let files = [];
+	if (fs.existsSync(path)) {
+		files = fs.readdirSync(path);
+		files.forEach(function (file) {
+			var curPath = path + "/" + file;
+			if (fs.lstatSync(curPath).isDirectory()) { // recurse
+				deleteFolderRecursive(curPath);
+			} else { // delete file
+				fs.unlinkSync(curPath);
+			}
+		});
+		fs.rmdirSync(path);
+	}
 };
 
 if (fs.existsSync(__dirname + "/code/")) {
-    deleteFolderRecursive(__dirname + "/code");
+	deleteFolderRecursive(__dirname + "/code");
 }
 fs.mkdirSync(__dirname + "/code/");
 
-request.post(`${root}/login.php`, {
-    headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-    },
-    body: `user_id=${auth.id}&password=${auth.password}`
-}, (err, res, body) => {
-    if (err) {
-        console.log(err);
-        return;
-    }
+let solved, num = 0;
 
-    let cookie = res.headers["set-cookie"].shift();
-    //console.log(cookie)
-    let login_token = cookie.substr("PHPSESSID=".length, cookie.indexOf(";") - "PHPSESSID=".length);
+const download = async () => {
+	let cookie = (await request.post("/login.php", `user_id=${auth.id}&password=${auth.password}`, {
+		headers: {
+			'Content-Type': 'application/x-www-form-urlencoded',
+			"user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36"
+		},
+	})).headers['set-cookie'].shift();
+	let session = cookie.substr("PHPSESSID=".length, cookie.indexOf(";") - "PHPSESSID=".length);
 
-    request.get(`${root}userinfo.php?user=chansol`, {
-        headers: {
-            "cookie": [`PHPSESSID=${login_token}`]
-        }
-    }, async (e, r, b) => {
-        var $ = cheerio.load(b);
-        let solved = $(".jumbotron > small")[0].children;
-        console.log(`푼 문제 수 : ${Math.floor(solved.length / 2)}`);
-        let num = 0;
-        for (let p of solved) {
-            if (p.attribs !== undefined && p.attribs.href !== undefined) {
-                if (!fs.existsSync(__dirname + "/code/" + p.children[0].data)) {
-                    fs.mkdirSync(__dirname + "/code/" + p.children[0].data);
-                }
-                console.log(`${p.children[0].data}번 조회 중... (${Math.round(++num / Math.floor(solved.length / 2) * 100)}% 완료)`);
-                await new Promise(res => {
-                    request(root + p.attribs.href, {
-                        headers: {
-                            "cookie": [`PHPSESSID=${login_token}`]
-                        }
-                    }, async (e, r, b) => {
-                        var $ = cheerio.load(b);
-                        let list = Object.values($(".card-header > a.btn.btn-sm.btn-primary")), i = 1;
-                        for (let p of list) {
-                            if (p.attribs === undefined || p.attribs.href === undefined) continue;
-                            await new Promise(res1 => {
-                                request.post(root + p.attribs.href, {
-                                    headers: {
-                                        "cookie": [`PHPSESSID=${login_token}`]
-                                    }
-                                }, async (e, r, b) => {
-                                    var $ = cheerio.load(b);
-                                    let status = $(".alert.alert-info.mt-1.pb-0 > p").text().split("/");
-                                    fs.writeFileSync(
-                                        `${__dirname}/code/${parseInt(status[0])}/${parseInt(status[0])}_${i++}.${replace[status[2].trim()]}`,
-                                        "/**************************************************************\n" +
-                                        status.map(v => v.trim()).join("\n") +
-                                        "\n****************************************************************/\n\n\n" +
-                                        $("#source").text());
-                                    res1();
-                                })
-                            });
-                        }
-                        res();
-                    });
-                });
-            }
-        }
-    })
-});
+	let solvedProblemHTML = (await request.get(`/userinfo.php?user=${auth.id}`, {
+		headers: {
+			'Cookie': `PHPSESSID=${session}`,
+			"user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36"
+		}
+	})).data;
+	let $ = cheerio.load(solvedProblemHTML);
+	solved = $(".jumbotron > small")[0].children;
+
+	console.log(`푼 문제 수 : ${Math.floor(solved.length / 2)}`);
+
+	for (let p of solved) {
+		if (p.attribs === undefined || p.attribs.href === undefined) continue;
+		if (!fs.existsSync(__dirname + "/code/" + p.children[0].data)) {
+			fs.mkdirSync(__dirname + "/code/" + p.children[0].data);
+		}
+		let problemHTML = (await request.get(p.attribs.href, {
+			headers: {
+				"cookie": `PHPSESSID=${session}`
+			}
+		})).data;
+
+		let $ = cheerio.load(problemHTML);
+		let list = Object.values($(".card-header > a.btn.btn-sm.btn-primary")), i = 1;
+		for (let p of list) {
+			if (p.attribs === undefined || p.attribs.href === undefined) continue;
+			let codeHTML = (await request.get(p.attribs.href, {
+				headers: {
+					"cookie": `PHPSESSID=${session}`
+				}
+			})).data;
+			let $ = cheerio.load(codeHTML);
+			let status = $(".alert.alert-info.mt-1.pb-0 > p").text().split("/");
+			fs.writeFileSync(
+					`${__dirname}/code/${parseInt(status[0])}/${parseInt(status[0])}_${i++}.${replace[status[2].trim()]}`,
+					"/**************************************************************\n" +
+					status.map(v => v.trim()).join("\n") +
+					"\n****************************************************************/\n\n\n" +
+					$("#source").text()
+			);
+		}
+
+		console.log(`${p.children[0].data}번 조회 완료... (${Math.round(++num / Math.floor(solved.length / 2) * 100)}% 완료)`);
+	}
+};
+
+download();

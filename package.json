@@ -1,13 +1,13 @@
 {
-  "name": "codeup_backup",
+  "name": "codeup_ac_downloader",
   "version": "1.0.0",
-  "description": "CodeUp AC Code Backup",
+  "description": "CodeUp AC Code Downloader",
   "main": "index.js",
   "keywords": [],
   "author": "박찬솔",
   "license": "MIT",
   "dependencies": {
     "cheerio": "^1.0.0-rc.3",
-    "request": "^2.88.0"
+    "axios": "^0.19.2"
   }
 }
